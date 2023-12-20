@@ -1,0 +1,29 @@
+[package]
+name = "inscribememaybe"
+version = "0.1.0"
+authors = ["Matthias Seitz <matthias.seitz@outlook.de>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/mattsse/inscribememaybe"
+repository = "https://github.com/mattsse/inscribememaybe"
+description = "CLI for inscribing messages (maybe)"
+
+
+[dependencies]
+ethers = "2.0"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+clap = { version = "4.4", features = ["derive"] }
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_with = "3.4"
+
+sqlx = { version = "0.7", features = [ "sqlite", "runtime-tokio" ] }
+eyre = "0.6"
+
+tracing-subscriber = { version = "0.3", features = ["registry", "env-filter", "fmt"] }
+tracing = "0.1"
+
+[[bin]]
+name = "inscribememaybe"
+path = "src/main.rs"
