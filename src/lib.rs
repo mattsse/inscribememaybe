@@ -2,25 +2,33 @@
 
 #![doc(issue_tracker_base_url = "https://github.com/mattsse/inscribememaybe/issues/")]
 #![warn(
+    missing_copy_implementations,
     missing_debug_implementations,
     missing_docs,
     unreachable_pub,
+    clippy::missing_const_for_fn,
     rustdoc::all
 )]
 #![deny(unused_must_use, rust_2018_idioms)]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
+use ethers::types::Address;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
+use serde_with::DisplayFromStr;
 use std::fmt;
 use std::str::FromStr;
+
+pub use protocol::*;
+
+mod protocol;
 
 /// Represents a deploy operation for inscribing data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Deploy {
     /// Represents the protocol, and here the ERC-20 protocol is used.
-    pub p: String,
+    pub p: Protocol,
     /// Represents the current token name to be deployed.
     pub tick: String,
     /// Represents the maximum issuance.
@@ -49,12 +57,10 @@ impl<'de> Deserialize<'de> for Deploy {
     where
         D: Deserializer<'de>,
     {
-        use serde_with::{serde_as, DisplayFromStr};
-
         #[serde_as]
         #[derive(Deserialize)]
         struct DeployOp {
-            p: String,
+            p: Protocol,
             op: Op,
             tick: String,
             #[serde_as(as = "DisplayFromStr")]
@@ -83,11 +89,11 @@ impl<'de> Deserialize<'de> for Deploy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Mint {
     /// Represents the protocol, and here the ERC-20 protocol is used.
-    pub p: String,
+    pub p: Protocol,
     /// Represents the current token name to be deployed.
     pub tick: String,
     /// The _unique_ id to use
-    pub id: String,
+    pub id: Option<String>,
     /// Represents the maximum amount that can be mined per mining operation.
     pub amt: u64,
 }
@@ -97,11 +103,13 @@ impl Serialize for Mint {
     where
         S: Serializer,
     {
-        let mut x = serializer.serialize_struct("Deploy", 5)?;
+        let mut x = serializer.serialize_struct("Mint", 4 + self.id.is_some() as usize)?;
         x.serialize_field("p", &self.p)?;
         x.serialize_field("op", &"mint")?;
         x.serialize_field("tick", &self.tick)?;
-        x.serialize_field("id", &self.id)?;
+        if let Some(id) = &self.id {
+            x.serialize_field("id", id)?;
+        }
         x.serialize_field("amt", &self.amt.to_string())?;
         x.end()
     }
@@ -112,15 +120,13 @@ impl<'de> Deserialize<'de> for Mint {
     where
         D: Deserializer<'de>,
     {
-        use serde_with::{serde_as, DisplayFromStr};
-
         #[serde_as]
         #[derive(Deserialize)]
         struct MintOp {
-            p: String,
+            p: Protocol,
             op: Op,
             tick: String,
-            id: String,
+            id: Option<String>,
             #[serde_as(as = "DisplayFromStr")]
             amt: u64,
         }
@@ -141,6 +147,70 @@ impl<'de> Deserialize<'de> for Mint {
     }
 }
 
+/// Represents a mint operation for inscribing data.
+// TODO: how may transfer variants are there?
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Transfer {
+    /// Represents the protocol, and here the ERC-20 protocol is used.
+    pub p: Protocol,
+    /// Represents the current token name to be deployed.
+    pub tick: String,
+    /// Target of the transfer
+    pub to: Vec<TransferItem>,
+}
+
+impl Serialize for Transfer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut x = serializer.serialize_struct("Transfer", 3)?;
+        x.serialize_field("p", &self.p)?;
+        x.serialize_field("op", &"transfer")?;
+        x.serialize_field("tick", &self.tick)?;
+        x.serialize_field("to", &self.to)?;
+        x.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Transfer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct TransferOp {
+            p: Protocol,
+            op: Op,
+            tick: String,
+            to: Vec<TransferItem>,
+        }
+
+        let transfer = TransferOp::deserialize(deserializer)?;
+        if !transfer.op.is_transfer() {
+            return Err(serde::de::Error::custom(format!(
+                "Invalid operation: {}, expected transfer",
+                transfer.op
+            )));
+        }
+        Ok(Transfer {
+            p: transfer.p,
+            tick: transfer.tick,
+            to: transfer.to,
+        })
+    }
+}
+
+/// How much to transfer to whom
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferItem {
+    /// recipient of the transfer
+    pub recv: Address,
+    /// amount to transfer
+    // #[serde_as(as = "DisplayFromStr")] // TODO why is this apparently a number?
+    pub amt: i64,
+}
+
 /// Represents operations for inscribing data.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Op {
@@ -148,6 +218,8 @@ pub enum Op {
     Deploy,
     /// Mint a new token.
     Mint,
+    /// Transfer a token
+    Transfer,
 }
 
 impl Op {
@@ -160,6 +232,11 @@ impl Op {
     pub const fn is_mint(&self) -> bool {
         matches!(self, Op::Mint)
     }
+
+    /// Returns true if the operation is `Transfer`.
+    pub const fn is_transfer(&self) -> bool {
+        matches!(self, Op::Transfer)
+    }
 }
 
 impl fmt::Display for Op {
@@ -167,6 +244,9 @@ impl fmt::Display for Op {
         match self {
             Op::Deploy => write!(f, "deploy"),
             Op::Mint => write!(f, "mint"),
+            Op::Transfer => {
+                write!(f, "transfer")
+            }
         }
     }
 }
@@ -178,6 +258,7 @@ impl FromStr for Op {
         match s.to_lowercase().as_str() {
             "deploy" => Ok(Op::Deploy),
             "mint" => Ok(Op::Mint),
+            "transfer" => Ok(Op::Transfer),
             _ => Err("Invalid operation"),
         }
     }
@@ -206,23 +287,38 @@ impl<'de> Deserialize<'de> for Op {
 mod tests {
     use super::*;
 
-    // Test function for serialization and deserialization.
     #[test]
-    fn test_serialization_deserialization() {
-        // Example JSON
+    fn test_transfer_serde() {
+        let json_data = r#"{"p":"osc-20","op":"transfer","tick":"osct","to":[{"recv":"0x8D4E4Ee435a2FE82A037ba10d4486049bADbCdB2","amt":-1000}]}"#;
+        let transfer: Transfer = serde_json::from_str(json_data).unwrap();
+        assert_eq!(
+            transfer,
+            Transfer {
+                p: NamedProtocol::Osc_20.into(),
+                tick: "osct".to_string(),
+                to: vec![TransferItem {
+                    recv: "0x8D4E4Ee435a2FE82A037ba10d4486049bADbCdB2"
+                        .parse()
+                        .unwrap(),
+                    amt: -1000,
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn test_deploy_serde() {
         let json_data =
             r#"{"p":"erc-20","op":"deploy","tick":"gwei","max":"21000000","lim":"1000"}"#;
 
-        // Deserialize JSON to struct
         let operation: Deploy =
             serde_json::from_str(json_data).expect("Failed to deserialize JSON");
 
         let serialized_json =
             serde_json::to_string(&operation).expect("Failed to serialize to JSON");
 
-        // Test deserialization
         let expected_operation = Deploy {
-            p: "erc-20".to_string(),
+            p: "erc-20".into(),
             tick: "gwei".to_string(),
             max: 21000000,
             lim: 1000,

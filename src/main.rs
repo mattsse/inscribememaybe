@@ -1,13 +1,5 @@
 use clap::{Parser, Subcommand};
-use ethers::prelude::{Provider, Signer};
-use ethers::types::Address;
-use ethers::{
-    providers::{Http, Middleware},
-    signers::LocalWallet,
-};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
+
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -74,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // let args = Args::parse();
 
-    let db = Database::new().await?;
+    let _db = Database::new().await?;
     // let provider = Provider::<Http>::try_from(args.rpc_url)?;
     // let chain_id = provider.get_chainid().await?;
 
