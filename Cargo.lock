@@ -67,6 +67,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
+name = "alloy-chains"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4df496257fe2fae392687ef30207325c50c68520108a94798b0c6cc1a6102f70"
+dependencies = [
+ "num_enum",
+ "serde",
+ "strum",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1172,6 +1183,7 @@ dependencies = [
  "const-hex",
  "enr",
  "ethers-core",
+ "futures-channel",
  "futures-core",
  "futures-timer",
  "futures-util",
@@ -1832,9 +1844,11 @@ dependencies = [
 name = "inscribememaybe"
 version = "0.1.0"
 dependencies = [
+ "alloy-chains",
  "clap",
  "ethers",
  "eyre",
+ "futures",
  "serde",
  "serde_json",
  "serde_with",

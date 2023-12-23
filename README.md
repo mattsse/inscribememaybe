@@ -15,7 +15,7 @@ $ cargo install inscribememaybe
 ## Usage
 
 ```bash
-$ inscribememaybe --message "{"p":"brr","op":"mint","tick":"brr","amt":"1000"}" --private-key "your_private_key" --rpc-url <rpc-url>
+$ inscribememaybe --message "{"p":"fair-20","op":"mint","tick":"brr","amt":"1000"}" --private-key "your_private_key" --rpc-url <rpc-url>
 ```
 
 

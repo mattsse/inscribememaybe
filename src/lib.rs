@@ -19,10 +19,65 @@ use serde_with::serde_as;
 use serde_with::DisplayFromStr;
 use std::fmt;
 use std::str::FromStr;
+use std::string::FromUtf8Error;
 
 pub use protocol::*;
 
 mod protocol;
+
+/// The prefix for json calldata
+pub const CALL_DATA_PREFIX: &str = "data:,";
+
+/// A helper trait for encoding inscription calldata
+pub trait InscriptionCalldata {
+    /// Returns the calldata for the inscription
+    ///
+    /// Note: This must be valid utf-8 and must contain the prefix [CALL_DATA_PREFIX]
+    fn calldata(&self) -> Vec<u8>;
+
+    /// Returns the calldata as a UTF8 string
+    ///
+    /// # Panics
+    ///
+    /// If the calldata is not valid utf-8
+    fn calldata_string(&self) -> String
+    where
+        Self: Sized,
+    {
+        self.try_calldata_string().expect("Valid utf-8")
+    }
+
+    /// Returns the calldata as a UTF8 string
+    fn try_calldata_string(&self) -> Result<String, FromUtf8Error>
+    where
+        Self: Sized,
+    {
+        String::from_utf8(self.calldata())
+    }
+}
+
+macro_rules! impl_inscription_calldata {
+    ($($t:ty),*) => {
+        $(
+            impl InscriptionCalldata for $t {
+                fn calldata(&self) -> Vec<u8> {
+                    let mut buf = CALL_DATA_PREFIX.as_bytes().to_vec();
+                    serde_json::to_writer(&mut buf, self).expect("Valid json");
+                    buf
+                }
+            }
+
+            impl fmt::Display for $t {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                    self.calldata_string().fmt(f)
+                }
+            }
+
+        )*
+    };
+}
+
+impl_inscription_calldata!(Deploy, Mint, Transfer);
 
 /// Represents a deploy operation for inscribing data.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -252,14 +307,14 @@ impl fmt::Display for Op {
 }
 
 impl FromStr for Op {
-    type Err = &'static str;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "deploy" => Ok(Op::Deploy),
             "mint" => Ok(Op::Mint),
             "transfer" => Ok(Op::Transfer),
-            _ => Err("Invalid operation"),
+            s => Err(format!("invalid operation: {s}")),
         }
     }
 }
@@ -286,6 +341,19 @@ impl<'de> Deserialize<'de> for Op {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calldata() {
+        let json_data =
+            r#"{"p":"erc-20","op":"deploy","tick":"gwei","max":"21000000","lim":"1000"}"#;
+        let operation: Deploy =
+            serde_json::from_str(json_data).expect("Failed to deserialize JSON");
+        let calldata = operation.calldata_string();
+        assert_eq!(
+            calldata,
+            r#"data:,{"p":"erc-20","op":"deploy","tick":"gwei","max":"21000000","lim":"1000"}"#
+        );
+    }
 
     #[test]
     fn test_transfer_serde() {
