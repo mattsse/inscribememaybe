@@ -13,13 +13,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 
 use ethers::types::Address;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::serde_as;
-use serde_with::DisplayFromStr;
-use std::fmt;
-use std::str::FromStr;
-use std::string::FromUtf8Error;
+use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use serde_with::{serde_as, DisplayFromStr};
+use std::{fmt, str::FromStr, string::FromUtf8Error};
 
 pub use protocol::*;
 
@@ -131,12 +127,7 @@ impl<'de> Deserialize<'de> for Deploy {
                 deploy.op
             )));
         }
-        Ok(Deploy {
-            p: deploy.p,
-            tick: deploy.tick,
-            max: deploy.max,
-            lim: deploy.lim,
-        })
+        Ok(Deploy { p: deploy.p, tick: deploy.tick, max: deploy.max, lim: deploy.lim })
     }
 }
 
@@ -193,12 +184,7 @@ impl<'de> Deserialize<'de> for Mint {
                 mint.op
             )));
         }
-        Ok(Mint {
-            p: mint.p,
-            tick: mint.tick,
-            id: mint.id,
-            amt: mint.amt,
-        })
+        Ok(Mint { p: mint.p, tick: mint.tick, id: mint.id, amt: mint.amt })
     }
 }
 
@@ -248,11 +234,7 @@ impl<'de> Deserialize<'de> for Transfer {
                 transfer.op
             )));
         }
-        Ok(Transfer {
-            p: transfer.p,
-            tick: transfer.tick,
-            to: transfer.to,
-        })
+        Ok(Transfer { p: transfer.p, tick: transfer.tick, to: transfer.to })
     }
 }
 
@@ -365,9 +347,7 @@ mod tests {
                 p: NamedProtocol::Osc_20.into(),
                 tick: "osct".to_string(),
                 to: vec![TransferItem {
-                    recv: "0x8D4E4Ee435a2FE82A037ba10d4486049bADbCdB2"
-                        .parse()
-                        .unwrap(),
+                    recv: "0x8D4E4Ee435a2FE82A037ba10d4486049bADbCdB2".parse().unwrap(),
                     amt: -1000,
                 }],
             }
@@ -385,12 +365,8 @@ mod tests {
         let serialized_json =
             serde_json::to_string(&operation).expect("Failed to serialize to JSON");
 
-        let expected_operation = Deploy {
-            p: "erc-20".into(),
-            tick: "gwei".to_string(),
-            max: 21000000,
-            lim: 1000,
-        };
+        let expected_operation =
+            Deploy { p: "erc-20".into(), tick: "gwei".to_string(), max: 21000000, lim: 1000 };
 
         assert_eq!(operation, expected_operation);
 

@@ -68,9 +68,9 @@ checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
 name = "alloy-chains"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4df496257fe2fae392687ef30207325c50c68520108a94798b0c6cc1a6102f70"
+checksum = "68a33ec1fdb68c347fdab62e1194c059a00143d97401b32aaa420ecbe4c2fbed"
 dependencies = [
  "num_enum",
  "serde",
@@ -2253,7 +2253,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
 dependencies = [
- "proc-macro-crate 2.0.1",
+ "proc-macro-crate 1.3.1",
  "proc-macro2",
  "quote",
  "syn 2.0.41",

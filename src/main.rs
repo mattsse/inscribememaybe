@@ -1,23 +1,26 @@
 use alloy_chains::Chain;
-use clap::builder::{RangedU64ValueParser, TypedValueParser};
-use clap::{Arg, Command, Parser, Subcommand};
-use ethers::prelude::Signer;
-use ethers::prelude::{Http, LocalWallet, Middleware, Provider, SignerMiddleware};
-use ethers::types::{Address, Bytes, TxHash};
-use futures::stream::FuturesOrdered;
-use futures::{Stream, StreamExt};
+use clap::{
+    builder::{RangedU64ValueParser, TypedValueParser},
+    Arg, Command, Parser, Subcommand,
+};
+use ethers::{
+    prelude::{Http, LocalWallet, Middleware, Provider, Signer, SignerMiddleware},
+    types::{Address, Bytes, TxHash},
+};
+use futures::{stream::FuturesOrdered, Stream, StreamExt};
 use inscribememaybe::{Deploy, InscriptionCalldata, Mint, CALL_DATA_PREFIX};
 use serde::de::DeserializeOwned;
 use sqlx::migrate::MigrateDatabase;
-use std::ffi::OsStr;
-use std::future::Future;
-use std::marker::PhantomData;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    ffi::OsStr,
+    future::Future,
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tracing::{debug, info, instrument};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -94,7 +97,7 @@ impl MintArgs {
         let db = Database::connect().await?;
 
         let chain_id = provider.get_chainid().await?;
-        if chain_id.as_u64() == Chain::mainnet().id() {
+        if chain_id.as_u64() == Chain::mainnet() {
             println!("it looks like you're targeting ethereum mainnet. To proceed, please acknowledge that you're a degenerate: [y/n]");
 
             // Read user input
@@ -106,10 +109,7 @@ impl MintArgs {
             }
         }
 
-        let wallet = self
-            .private_key
-            .parse::<LocalWallet>()?
-            .with_chain_id(chain_id.as_u64());
+        let wallet = self.private_key.parse::<LocalWallet>()?.with_chain_id(chain_id.as_u64());
 
         let address = wallet.address();
         debug!(from=?address, inscription=%self.message, mints=%self.transactions, "start minting");
@@ -130,17 +130,8 @@ impl MintArgs {
 
         while let Some(event) = inscriber.next().await {
             match event {
-                InscriptionEvent::Mint {
-                    sender,
-                    chain_id,
-                    tx_hash,
-                    calldata,
-                } => {
+                InscriptionEvent::Mint { sender, chain_id, tx_hash, calldata } => {
                     if let Some((_, etherscan)) = chain.etherscan_urls() {
-                        let mut etherscan_base = etherscan.to_string();
-                        if !etherscan_base.ends_with("/") {
-                            etherscan_base.push('/');
-                        }
                         let tx_url = format!("{}tx/{}", etherscan, tx_hash);
                         info!(%tx_url, "minted");
                     }
@@ -181,10 +172,7 @@ impl Database {
             info!("created database");
         }
 
-        let db = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(url)
-            .await?;
+        let db = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect(url).await?;
 
         // run migration
         sqlx::migrate!("./migrations").run(&db).await?;
@@ -244,9 +232,8 @@ where
         _arg: Option<&Arg>,
         value: &OsStr,
     ) -> Result<Self::Value, clap::Error> {
-        let val = value
-            .to_str()
-            .ok_or_else(|| clap::Error::new(clap::error::ErrorKind::InvalidUtf8))?;
+        let val =
+            value.to_str().ok_or_else(|| clap::Error::new(clap::error::ErrorKind::InvalidUtf8))?;
         let raw = val.trim_start_matches(CALL_DATA_PREFIX);
 
         serde_json::from_str(raw)
@@ -287,12 +274,7 @@ where
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 enum InscriptionEvent {
-    Mint {
-        sender: Address,
-        chain_id: u64,
-        tx_hash: TxHash,
-        calldata: Bytes,
-    },
+    Mint { sender: Address, chain_id: u64, tx_hash: TxHash, calldata: Bytes },
 }
 
 #[tokio::main]
@@ -340,13 +322,6 @@ mod tests {
     #[ignore]
     async fn test_insert_one() {
         let db = Database::connect().await.unwrap();
-        db.insert_one(
-            Default::default(),
-            1,
-            Default::default(),
-            Default::default(),
-        )
-        .await
-        .unwrap();
+        db.insert_one(Default::default(), 1, Default::default(), Default::default()).await.unwrap();
     }
 }
