@@ -151,7 +151,7 @@ impl MintArgs {
                     let tx_hash = receipt.transaction_hash;
                     let block = receipt.block_number.unwrap_or_default().as_u64();
                     if let Some((_, etherscan)) = chain.etherscan_urls() {
-                        let tx_url = format!("{}/tx/{}", etherscan, tx_hash);
+                        let tx_url = format!("{}/tx/{:?}", etherscan, tx_hash);
                         info!(%tx_url, %block, "minted");
                     } else {
                         info!(hash=?tx_hash, %block, "minted");
