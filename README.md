@@ -25,7 +25,7 @@ anvil
 2. mint
 
 ```bash
-cargo r -- mint '{"p":"fair-20","op":"mint","tick":"brr","amt":"1000"}' --pk "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" --rpc-url "ws://127.0.0.1:8545" --transactions 10                                                                     ✔ main 
+cargo r -- mint '{"p":"fair-20","op":"mint","tick":"brr","amt":"1000"}' --pk "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" --rpc-url "ws://127.0.0.1:8545" --transactions 10
 2023-12-24T12:02:31.101724Z  INFO connect_to{url="sqlite://inscribememaybe.sqlite"}: inscribememaybe: connected to database
 2023-12-24T12:02:38.148369Z  INFO inscribememaybe: minted hash=0x9daa7e3ddedea4863ef413eb1bbc24e60c0d381935e9062cf4fc94bc3702735d block=1
 2023-12-24T12:02:38.150491Z  INFO inscribememaybe: minted hash=0xcbae71c3d907625c9912c96bf129dd3377eda13520a37be9a3ffa9c2e95bc478 block=1
