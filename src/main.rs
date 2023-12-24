@@ -1,12 +1,3 @@
-use std::{
-    ffi::OsStr,
-    future::Future,
-    marker::PhantomData,
-    pin::Pin,
-    sync::Arc,
-    task::{ready, Context, Poll},
-};
-
 use alloy_chains::Chain;
 use clap::{
     builder::{RangedU64ValueParser, TypedValueParser},
@@ -23,6 +14,14 @@ use futures::{stream::FuturesUnordered, Stream, StreamExt};
 use inscribememaybe::{Deploy, InscriptionCalldata, Mint, CALL_DATA_PREFIX};
 use serde::de::DeserializeOwned;
 use sqlx::migrate::MigrateDatabase;
+use std::{
+    ffi::OsStr,
+    future::Future,
+    marker::PhantomData,
+    pin::Pin,
+    sync::Arc,
+    task::{ready, Context, Poll},
+};
 use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -105,6 +104,16 @@ impl MintArgs {
             println!("it looks like you're targeting ethereum mainnet. to proceed, acknowledge that you're a degenerate and willingly continue at your own risk.: [y/n]");
 
             // Read user input
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+
+            if !["y", "yes"].contains(&input.trim().to_lowercase().as_str()) {
+                return Ok(());
+            }
+        }
+
+        if self.transactions > 1 && self.message.id.is_some() {
+            println!("you're about to mint tokens with the same inscription id. this is probably not what you want. continue anyway?: [y/n]");
             let mut input = String::new();
             std::io::stdin().read_line(&mut input)?;
 
@@ -395,10 +404,10 @@ async fn main() -> eyre::Result<()> {
         Subcommands::Mint(args) => {
             args.run().await?;
         }
-        Subcommands::Deploy { .. } => {}
+        Subcommands::Deploy { .. } => {
+            eprintln!("deploying tokens is not yet supported");
+        }
     }
-
-    // let _wallet = args.private_key.parse::<LocalWallet>()?.with_chain_id(chain_id.as_u64());
 
     Ok(())
 }
