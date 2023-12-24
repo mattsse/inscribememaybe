@@ -1,25 +1,29 @@
-use alloy_chains::Chain;
-use clap::{
-    builder::{RangedU64ValueParser, TypedValueParser},
-    Arg, Command, Parser, Subcommand,
-};
-use ethers::{
-    prelude::{Http, LocalWallet, Middleware, Provider, Signer, SignerMiddleware},
-    types::{Address, Bytes, TxHash},
-};
-use futures::{stream::FuturesOrdered, Stream, StreamExt};
-use inscribememaybe::{Deploy, InscriptionCalldata, Mint, CALL_DATA_PREFIX};
-use serde::de::DeserializeOwned;
-use sqlx::migrate::MigrateDatabase;
 use std::{
     ffi::OsStr,
     future::Future,
     marker::PhantomData,
     pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
+    task::{ready, Context, Poll},
 };
-use tracing::{debug, info, instrument};
+
+use alloy_chains::Chain;
+use clap::{
+    builder::{RangedU64ValueParser, TypedValueParser},
+    Arg, Command, Parser, Subcommand,
+};
+use ethers::{
+    prelude::{
+        transaction::eip2718::TypedTransaction, Http, LocalWallet, Middleware, Provider, Signer,
+        SignerMiddleware, TransactionReceipt,
+    },
+    types::{Address, Bytes, TransactionRequest, TxHash},
+};
+use futures::{stream::FuturesUnordered, Stream, StreamExt};
+use inscribememaybe::{Deploy, InscriptionCalldata, Mint, CALL_DATA_PREFIX};
+use serde::de::DeserializeOwned;
+use sqlx::migrate::MigrateDatabase;
+use tracing::{debug, info, instrument, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Debug, Parser)]
@@ -97,8 +101,8 @@ impl MintArgs {
         let db = Database::connect().await?;
 
         let chain_id = provider.get_chainid().await?;
-        if chain_id.as_u64() == Chain::mainnet() {
-            println!("it looks like you're targeting ethereum mainnet. To proceed, please acknowledge that you're a degenerate: [y/n]");
+        if Chain::mainnet() == chain_id.as_u64() {
+            println!("it looks like you're targeting ethereum mainnet. to proceed, acknowledge that you're a degenerate and willingly continue at your own risk.: [y/n]");
 
             // Read user input
             let mut input = String::new();
@@ -112,34 +116,46 @@ impl MintArgs {
         let wallet = self.private_key.parse::<LocalWallet>()?.with_chain_id(chain_id.as_u64());
 
         let address = wallet.address();
-        debug!(from=?address, inscription=%self.message, mints=%self.transactions, "start minting");
+        let nonce = provider.get_transaction_count(wallet.address(), None).await?;
+
+        debug!(from=?address, nonce=%nonce.as_u64(), inscription=%self.message, mints=%self.transactions, "start minting");
 
         let chain = Chain::from(chain_id.as_u64());
         let provider = Arc::new(SignerMiddleware::new(provider, wallet));
 
         let mut inscriber = Inscriber {
-            transactions: Default::default(),
+            pending: Default::default(),
             calldata: self.message.calldata().into(),
             sender: address,
             count: 0,
+            highest_nonce: nonce.as_u64(),
             max_transactions: self.transactions,
-            concurrency: self.concurrency,
+            concurrency: self.concurrency as usize,
             chain_id: chain_id.as_u64(),
             provider,
         };
 
+        let mut mints = 0;
         while let Some(event) = inscriber.next().await {
             match event {
-                InscriptionEvent::Mint { sender, chain_id, tx_hash, calldata } => {
+                InscriptionEvent::Mint { sender, chain_id, calldata, receipt } => {
+                    let tx_hash = receipt.transaction_hash;
+                    let block = receipt.block_number.unwrap_or_default().as_u64();
                     if let Some((_, etherscan)) = chain.etherscan_urls() {
-                        let tx_url = format!("{}tx/{}", etherscan, tx_hash);
-                        info!(%tx_url, "minted");
+                        let tx_url = format!("{}/tx/{}", etherscan, tx_hash);
+                        info!(%tx_url, %block, "minted");
+                    } else {
+                        info!(hash=?tx_hash, %block, "minted");
                     }
 
                     let _ = db.insert_one(sender, chain_id, tx_hash, calldata).await;
+
+                    mints += 1;
                 }
             }
         }
+
+        info!(%mints, "finished minting");
 
         Ok(())
     }
@@ -202,7 +218,7 @@ impl Database {
             .bind(format!("{:?}", hash))
             .bind(format!("{:?}", calldata))
             .execute(&self.0).await?;
-        info!(?res, "inserted inscription");
+        debug!(?res, "inserted inscription");
 
         Ok(())
     }
@@ -242,22 +258,63 @@ where
 }
 
 /// Handles inscriptions.
+///
+/// TODO
 struct Inscriber<M> {
     /// in progress transactions
-    transactions: FuturesOrdered<Pin<Box<dyn Future<Output = eyre::Result<TxHash>>>>>,
+    // TODO timestamp these and rebroadcast if they take too long
+    pending: FuturesUnordered<Pin<Box<dyn Future<Output = InscriptionResult>>>>,
     /// The call data to send
     calldata: Bytes,
     sender: Address,
     /// how many transactions we sent already
     count: u64,
+    /// The next nonce to use
+    highest_nonce: u64,
     /// How many transactions to send
     max_transactions: u64,
     /// How many transactions to send concurrently
-    concurrency: u64,
+    concurrency: usize,
     /// The targeted chain id
     chain_id: u64,
     /// The provider to use
+    ///
+    /// Caution: we expect this to sign the transaction
     provider: M,
+}
+
+impl<M> Inscriber<M> {
+    /// Returns the next transaction to send.
+    fn next_transaction(&mut self) -> TypedTransaction {
+        TransactionRequest::new()
+            .to(self.sender)
+            .value(0u64)
+            // This should be sufficient
+            .gas(22200)
+            .nonce(self.highest_nonce)
+            .data(self.calldata.clone())
+            .into()
+    }
+}
+
+impl<M> Inscriber<M>
+where
+    M: Middleware + Send + Sync + Clone + Unpin + 'static,
+{
+    /// This starts sending the given transaction
+    fn start_transaction(&mut self, tx: TypedTransaction) {
+        let provider = self.provider.clone();
+        let nonce = tx.nonce().expect("nonce is set").as_u64();
+        let fut = async move {
+            let pending = provider.send_transaction(tx.clone(), None).await;
+            let res = match pending {
+                Ok(pending) => pending.await.map_err(Into::into),
+                Err(err) => Err(err.into()),
+            };
+            InscriptionResult { tx, nonce, res }
+        };
+        self.pending.push(Box::pin(fut));
+    }
 }
 
 impl<M> Stream for Inscriber<M>
@@ -266,15 +323,60 @@ where
 {
     type Item = InscriptionEvent;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!()
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.get_mut();
+
+        loop {
+            if this.count >= this.max_transactions && this.pending.is_empty() {
+                // we're done
+                return Poll::Ready(None);
+            }
+
+            while this.pending.len() < this.concurrency && this.count < this.max_transactions {
+                let tx = this.next_transaction();
+                this.start_transaction(tx);
+                this.highest_nonce += 1;
+                this.count += 1;
+            }
+
+            if let Some(res) = ready!(this.pending.poll_next_unpin(cx)) {
+                let InscriptionResult { tx, res, nonce } = res;
+                match res {
+                    Ok(Some(receipt)) => {
+                        debug!(?receipt, "minted");
+                        return Poll::Ready(Some(InscriptionEvent::Mint {
+                            receipt,
+                            sender: this.sender,
+                            chain_id: this.chain_id,
+                            calldata: this.calldata.clone(),
+                        }));
+                    }
+                    Ok(None) => {
+                        warn!(%nonce, "failed to get tx receipt; resending");
+                        this.start_transaction(tx)
+                    }
+                    Err(err) => {
+                        // TODO better error handling here
+                        debug!(%err, %nonce, "failed to mint; resending");
+                        this.start_transaction(tx)
+                    }
+                }
+            }
+        }
     }
+}
+
+#[derive(Debug)]
+struct InscriptionResult {
+    tx: TypedTransaction,
+    nonce: u64,
+    res: eyre::Result<Option<TransactionReceipt>>,
 }
 
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 enum InscriptionEvent {
-    Mint { sender: Address, chain_id: u64, tx_hash: TxHash, calldata: Bytes },
+    Mint { receipt: TransactionReceipt, sender: Address, chain_id: u64, calldata: Bytes },
 }
 
 #[tokio::main]
